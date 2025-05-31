@@ -1,0 +1,37 @@
+# structures: contiki-firmware build artifacts
+/contiki-firmware/build/
+/contiki-firmware/.cooja/
+/contiki-firmware/*.elf
+/contiki-firmware/*.bin
+/contiki-firmware/*.hex
+/contiki-firmware/*.native
+
+# structures: tinycbor / emlearn generated files
+/contiki-firmware/emlearn/__pycache__/
+/contiki-firmware/emlearn/*.o
+
+# structures: java backend / spring boot
+/java-backend/target/
+/java-backend/.classpath
+/java-backend/.project
+/java-backend/.settings/
+/java-backend/*.log
+
+# structures: java cli
+/java-cli/target/
+/java-cli/.classpath
+/java-cli/.project
+/java-cli/.settings/
+/java-cli/*.log
+
+# structures: jupyter / ipython notebooks
+/colab-notebooks/*.ipynb_checkpoints
+
+# structures: OS / editor misc
+*.DS_Store
+*.swp
+*.swo
+*.log
+.vscode/
+.idea/
+
