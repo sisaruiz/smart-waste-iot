@@ -7,6 +7,7 @@
 #include "os/dev/button-hal.h"
 #include "coap-blocking-api.h"
 #include "sys/log.h"
+#include "resources/util.h"  // if needed
 
 #define LOG_MODULE "FullActuator"
 #define LOG_LEVEL LOG_LEVEL_APP
@@ -16,6 +17,9 @@ static char *service_url = "/registration";
 static coap_endpoint_t server_ep;
 static coap_message_t request[1];
 static bool registered = false;
+
+// Assume distance_resource sets this flag when bin is full
+extern bool bin_full_flag;
 
 void client_chunk_handler(coap_message_t *response) {
   const uint8_t *chunk;
@@ -71,14 +75,14 @@ PROCESS_THREAD(full_actuator_process, ev, data) {
       button_resource.trigger();
     }
 
-    // Example LED control based on some flags set by distance_resource:
-    // (You would set a global or shared flag inside distance_resource's PUT handler)
-    // if(bin_full_flag) {
-    //     leds_on(LEDS_GREEN);
-    //     leds_off(LEDS_RED);
-    // } else {
-    //     leds_off(LEDS_GREEN);
-    // }
+    // Control LEDs based on bin fullness
+    if(bin_full_flag) {
+      leds_on(LEDS_GREEN);
+      leds_off(LEDS_RED);
+    } else {
+      leds_off(LEDS_GREEN);
+      leds_off(LEDS_RED);
+    }
   }
 
   PROCESS_END();
