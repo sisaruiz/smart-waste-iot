@@ -1,0 +1,52 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.unipi.smartwaste</groupId>
+    <artifactId>smart-waste-coap-client</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <name>Smart Waste CoAP Client</name>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <!-- Adjust Java version to your setup -->
+    </properties>
+
+    <dependencies>
+        <!-- Eclipse Californium Core for CoAP -->
+        <dependency>
+            <groupId>org.eclipse.californium</groupId>
+            <artifactId>californium-core</artifactId>
+            <version>3.7.0</version>
+        </dependency>
+
+        <!-- JSON.simple for JSON handling -->
+        <dependency>
+            <groupId>com.googlecode.json-simple</groupId>
+            <artifactId>json-simple</artifactId>
+            <version>1.1.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+            <version>1.2.5</version>
+        </dependency>
+
+        <!-- Add your database driver dependency if needed -->
+        <!--
+        <dependency>
+            <groupId>your.db.driver.group</groupId>
+            <artifactId>your-db-driver-artifact</artifactId>
+            <version>your-db-driver-version</version>
+        </dependency>
+        -->
+
+    </dependencies>
+
+</project>

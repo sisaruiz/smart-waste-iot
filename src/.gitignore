@@ -1,0 +1,65 @@
+# === IntelliJ IDEA ===
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# === OS generated files ===
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+._*
+
+# === Java build output ===
+out/
+bin/
+
+# === Maven ===
+target/
+
+# === Gradle ===
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# === Logs ===
+*.log
+
+# === Temporary files ===
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# === Dependency caches ===
+.mvn/
+.cache/
+.classpath
+.project
+.settings/
+
+# === Test reports ===
+/test-output/
+/surefire-reports/
+/jacoco.exec
+
+# === Others (optional, if you generate coverage or reports) ===
+/coverage/
+/reports/
+
+# === Environment files (if any, customize if you have them) ===
+.env
+.env.*
+
+# === VSCode (if someone uses it on the side) ===
+.vscode/
+
+# === Packaging artifacts ===
+*.jar
+*.war
+*.ear
+
+# === Custom files you don't want in Git ===
+# Add any specific files or folders you know are local-only
