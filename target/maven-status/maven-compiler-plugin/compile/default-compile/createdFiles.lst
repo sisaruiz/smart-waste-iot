@@ -1,0 +1,10 @@
+org/unipi/smartwaste/mqtt/MQTTHandler.class
+org/unipi/smartwaste/app/CommandLineInterface.class
+org/unipi/smartwaste/coap/COAPRegistrationHandler.class
+org/unipi/smartwaste/app/PeriodicDataRetrieval.class
+org/unipi/smartwaste/coap/COAPClient$1.class
+org/unipi/smartwaste/db/DBDriver.class
+org/unipi/smartwaste/coap/COAPClient.class
+org/unipi/smartwaste/db/testDB.class
+org/unipi/smartwaste/app/Main.class
+org/unipi/smartwaste/coap/COAPRegistrationResource.class
