@@ -13,7 +13,8 @@ public class DBDriver {
     public static int updateActuatorStatus(String ip, String actuatorType, Boolean status) throws SQLException {
         try (Connection connection = DriverManager.getConnection(url, username, password);
              PreparedStatement ps = connection.prepareStatement(
-                 "REPLACE INTO actuators (ip, type, active) VALUES (?, ?, ?);"
+                 "INSERT INTO actuators (ip, type, active) VALUES (?, ?, ?) " +
+                 "ON DUPLICATE KEY UPDATE active = VALUES(active);"
              )) {
             if (ip.startsWith("/")) {
                 ip = ip.substring(1);
@@ -64,13 +65,13 @@ public class DBDriver {
                      "  (SELECT a.active FROM actuators a WHERE a.ip = b.ip AND a.type = 'anomaly' LIMIT 1) AS anomaly_active, " +
                      "  (SELECT a.active FROM actuators a WHERE a.ip = b.ip AND a.type = 'full' LIMIT 1) AS full_active " +
                      "FROM bins b " +
-                     "LEFT JOIN data ds_fill ON ds_fill.sensor = 'fill_level' AND ds_fill.timestamp = (" +
+                     "LEFT JOIN data ds_fill ON ds_fill.sensor = 'fill_level' AND ds_fill.sensor_ip = b.ip AND ds_fill.timestamp = (" +
                      "    SELECT MAX(timestamp) FROM data WHERE sensor = 'fill_level' AND sensor_ip = b.ip" +
                      ") " +
-                     "LEFT JOIN data ds_temp ON ds_temp.sensor = 'temperature' AND ds_temp.timestamp = (" +
+                     "LEFT JOIN data ds_temp ON ds_temp.sensor = 'temperature' AND ds_temp.sensor_ip = b.ip AND ds_temp.timestamp = (" +
                      "    SELECT MAX(timestamp) FROM data WHERE sensor = 'temperature' AND sensor_ip = b.ip" +
                      ") " +
-                     "LEFT JOIN data ds_hum ON ds_hum.sensor = 'humidity' AND ds_hum.timestamp = (" +
+                     "LEFT JOIN data ds_hum ON ds_hum.sensor = 'humidity' AND ds_hum.sensor_ip = b.ip AND ds_hum.timestamp = (" +
                      "    SELECT MAX(timestamp) FROM data WHERE sensor = 'humidity' AND sensor_ip = b.ip" +
                      ")";
 
@@ -106,21 +107,25 @@ public class DBDriver {
         return binsList;
     }
 
-    // Insert sensor data (value + sensor type)
-    public static int insertSensorData(Long value, String sensorType) throws SQLException {
+    // Insert sensor data (value + sensor type + sensor IP)
+    public static int insertSensorData(Long value, String sensorType, String sensorIp) throws SQLException {
         try (Connection connection = DriverManager.getConnection(url, username, password);
              PreparedStatement ps = connection.prepareStatement(
-                 "INSERT INTO data (value, sensor) VALUES (?, ?);"
+                 "INSERT INTO data (value, sensor, sensor_ip) VALUES (?, ?, ?);"
              )) {
             ps.setInt(1, Math.toIntExact(value));
             ps.setString(2, sensorType);
+            if (sensorIp.startsWith("/")) {
+                sensorIp = sensorIp.substring(1);
+            }
+            ps.setString(3, sensorIp);
             return ps.executeUpdate();
         }
     }
 
     // Alias method for insertSensorData (used by MQTTHandler)
-    public static int insertData(Long value, String sensorType) throws SQLException {
-        return insertSensorData(value, sensorType);
+    public static int insertData(Long value, String sensorType, String sensorIp) throws SQLException {
+        return insertSensorData(value, sensorType, sensorIp);
     }
 
     // Insert button press event with current timestamp
@@ -136,13 +141,12 @@ public class DBDriver {
     // Retrieve latest sensor data per sensor type
     public static HashMap<String, Integer> retrieveData() throws SQLException {
         HashMap<String, Integer> latestValues = new HashMap<>();
+        String sql = "SELECT d.sensor, d.value FROM data d " +
+                     "WHERE d.timestamp = (" +
+                     "  SELECT MAX(timestamp) FROM data WHERE sensor = d.sensor" +
+                     ")";
         try (Connection connection = DriverManager.getConnection(url, username, password);
-             PreparedStatement ps = connection.prepareStatement(
-                 "SELECT sensor, value FROM data " +
-                 "WHERE (sensor, timestamp) IN (" +
-                 "SELECT sensor, MAX(timestamp) FROM data GROUP BY sensor" +
-                 ")"
-             );
+             PreparedStatement ps = connection.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 latestValues.put(rs.getString("sensor"), rs.getInt("value"));

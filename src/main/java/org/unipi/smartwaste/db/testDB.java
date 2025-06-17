@@ -22,11 +22,15 @@ public class testDB {
         }
 
         try {
-            // Insert sample sensor data
-            System.out.println("Insert temperature 20: " + DBDriver.insertSensorData(20L, "temperature"));
-            System.out.println("Insert humidity 40: " + DBDriver.insertSensorData(40L, "humidity"));
-            System.out.println("Insert temperature 22: " + DBDriver.insertSensorData(22L, "temperature"));
-            System.out.println("Insert distance 75: " + DBDriver.insertSensorData(75L, "distance"));
+            // Insert sample sensor data (provide sensor IP now)
+            System.out.println("Insert temperature 20 from 192.168.0.100: " +
+                DBDriver.insertSensorData(20L, "temperature", "192.168.0.100"));
+            System.out.println("Insert humidity 40 from 192.168.0.101: " +
+                DBDriver.insertSensorData(40L, "humidity", "192.168.0.101"));
+            System.out.println("Insert temperature 22 from 192.168.0.100: " +
+                DBDriver.insertSensorData(22L, "temperature", "192.168.0.100"));
+            System.out.println("Insert distance 75 from 192.168.0.102: " +
+                DBDriver.insertSensorData(75L, "distance", "192.168.0.102"));
 
             // Retrieve latest sensor values
             HashMap<String, Integer> latestValues = DBDriver.retrieveData();
