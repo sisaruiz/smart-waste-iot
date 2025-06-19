@@ -94,7 +94,15 @@ public class MQTTHandler implements MqttCallback, Runnable {
                 Object val = obj.get("value");
                 if (val instanceof Number) {
                     long value = ((Number) val).longValue();
-                    if (DBDriver.insertData(value, topic) < 1) {
+
+                    // Extract sensor_ip from JSON if present, else empty string
+                    String sensorIp = "";
+                    Object ipObj = obj.get("sensor_ip");
+                    if (ipObj != null) {
+                        sensorIp = ipObj.toString();
+                    }
+
+                    if (DBDriver.insertData(value, topic, sensorIp) < 1) {
                         System.err.println("Database error: could not insert data for " + topic);
                     }
                 } else {
