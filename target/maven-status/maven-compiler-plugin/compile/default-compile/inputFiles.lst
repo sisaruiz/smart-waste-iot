@@ -1,0 +1,9 @@
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/db/testDB.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/app/CommandLineInterface.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/coap/COAPRegistrationHandler.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/mqtt/MQTTHandler.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/app/Main.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/db/DBDriver.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/coap/COAPClient.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/app/PeriodicDataRetrieval.java
+/home/iot_ubuntu_intel/contiki-ng/project/smart-waste-iot/src/main/java/org/unipi/smartwaste/coap/COAPRegistrationResource.java
