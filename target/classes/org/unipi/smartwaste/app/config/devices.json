@@ -1,0 +1,30 @@
+{
+  "sensors": [
+    {
+      "type": "temperature",
+      "topic": "sensor/temperature"
+    },
+    {
+      "type": "fill_level",
+      "topic": "sensor/fill_level"
+    },
+    {
+      "type": "humidity",
+      "topic": "sensor/humidity"
+    }
+  ],
+  "actuators": [
+    {
+      "type": "full",
+      "coapUri": "coap://[ACTUATOR_IP]/actuators/full"
+    },
+    {
+      "type": "fire",
+      "coapUri": "coap://[ACTUATOR_IP]/actuators/anomaly_fire"
+    },
+    {
+      "type": "leak",
+      "coapUri": "coap://[ACTUATOR_IP]/actuators/anomaly_leakage"
+    }
+  ]
+}

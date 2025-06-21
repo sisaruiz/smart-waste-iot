@@ -1,153 +1,99 @@
 package org.unipi.smartwaste.mqtt;
 
 import org.eclipse.paho.client.mqttv3.*;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
-import org.unipi.smartwaste.app.DeviceConfigManager;
-import org.unipi.smartwaste.app.DeviceConfigManager.Device;
-import org.unipi.smartwaste.app.DeviceConfigManager.MqttTopics;
+import org.unipi.smartwaste.configuration.Sensor;
 import org.unipi.smartwaste.db.DBDriver;
 
-import java.nio.charset.StandardCharsets;
-import java.sql.SQLException;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class MQTTHandler implements MqttCallback, Runnable {
+public class MQTTHandler implements MqttCallback {
 
-    private static final MQTTHandler instance = new MQTTHandler();
+    private final MqttClient client;
+    private final DBDriver db;
 
-    private MqttClient mqttClient;
-    private final String broker = "tcp://127.0.0.1:1883";
-    private final String clientId = "SmartBin-MQTTHandler";
+    // Maps topic to sensor type (e.g., "sensors/temp" → "temperature")
+    private final Map<String, String> topicToSensorType = new ConcurrentHashMap<>();
 
-    private final Set<String> allTopics = new HashSet<>(); // Stores all MQTT topics from config
+    // Latest values received from each sensor type (e.g., "temperature" → "52.1")
+    private final Map<String, String> latestSensorValues = new ConcurrentHashMap<>();
 
-    private MQTTHandler() {}
+    public MQTTHandler(List<Sensor> sensors, DBDriver db) {
+        this.db = db;
 
-    public static MQTTHandler getInstance() {
-        return instance;
-    }
+        String brokerUrl = "tcp://localhost:1883"; // Replace with your actual broker URL
+        String clientId = MqttClient.generateClientId();
 
-    @Override
-    public void run() {
         try {
-            mqttClient = new MqttClient(broker, clientId);
-            mqttClient.setCallback(this);
-            collectTopicsFromConfig();
-            connectAndSubscribe();
-        } catch (MqttException e) {
-            System.err.println("Could not connect to the MQTT broker: " + e.getMessage());
-        }
-    }
+            client = new MqttClient(brokerUrl, clientId);
+            MqttConnectOptions options = new MqttConnectOptions();
+            options.setAutomaticReconnect(true);
+            options.setCleanSession(true);
+            client.setCallback(this);
+            client.connect(options);
 
-    /** Gathers all topics from the config file */
-    private void collectTopicsFromConfig() {
-        List<Device> devices = DeviceConfigManager.getDevices();
+            System.out.println("[MQTTHandler] Connected to MQTT broker: " + brokerUrl);
 
-        for (Device device : devices) {
-            MqttTopics mqtt = device.mqtt_topics;
-            if (mqtt != null) {
-                Collections.addAll(allTopics,
-                    mqtt.temperature,
-                    mqtt.humidity,
-                    mqtt.distance,
-                    mqtt.button,
-                    mqtt.full_bin_cmd,
-                    mqtt.anomaly_cmd,
-                    mqtt.empty_bin_cmd
-                );
+            // Subscribe to all sensor topics
+            for (Sensor sensor : sensors) {
+                String topic = sensor.getTopic();
+                topicToSensorType.put(topic, sensor.getType());
+                client.subscribe(topic);
+                System.out.println("[MQTTHandler] Subscribed to topic: " + topic + " as " + sensor.getType());
             }
-        }
-    }
 
-    /** Connect to broker and subscribe to all required topics */
-    private void connectAndSubscribe() throws MqttException {
-        mqttClient.connect();
-        for (String topic : allTopics) {
-            mqttClient.subscribe(topic);
+        } catch (MqttException e) {
+            throw new RuntimeException("[MQTTHandler] Failed to connect or subscribe to MQTT broker", e);
         }
-        System.out.println("Connected and subscribed to topics:\n" + allTopics);
     }
 
     @Override
     public void connectionLost(Throwable cause) {
-        System.err.println("MQTT connection lost: " + cause.getMessage());
-        attemptReconnect();
-    }
-
-    private void attemptReconnect() {
-        new Thread(() -> {
-            while (!mqttClient.isConnected()) {
-                try {
-                    Thread.sleep(3000);
-                    connectAndSubscribe();
-                    System.out.println("Reconnected to MQTT broker.");
-                } catch (MqttException | InterruptedException e) {
-                    System.err.println("Reconnect failed: " + e.getMessage());
-                }
-            }
-        }).start();
+        System.err.println("[MQTTHandler] Connection lost: " + cause.getMessage());
     }
 
     @Override
-    public void messageArrived(String topic, MqttMessage mqttMessage) {
-        String payloadStr = new String(mqttMessage.getPayload(), StandardCharsets.UTF_8);
-        JSONParser parser = new JSONParser();
+    public void messageArrived(String topic, MqttMessage message) {
+        String payload = new String(message.getPayload());
+        System.out.println("[MQTTHandler] Message arrived - Topic: " + topic + ", Payload: " + payload);
 
-        try {
-            JSONObject obj = (JSONObject) parser.parse(payloadStr);
+        String sensorType = topicToSensorType.get(topic);
 
-            if (topic.contains("button")) {
-                String status = (String) obj.get("button");
-                if ("pressed".equalsIgnoreCase(status)) {
-                    if (DBDriver.insertButtonPress() < 1) {
-                        System.err.println("Database error: could not insert button press");
-                    }
-                } else {
-                    System.err.println("Invalid button message: " + payloadStr);
-                }
-            } else if (topic.contains("temperature") || topic.contains("humidity") || topic.contains("distance")) {
-                Object val = obj.get("value");
-                if (val instanceof Number) {
-                    long value = ((Number) val).longValue();
-                    String sensorIp = "";
-                    Object ipObj = obj.get("sensor_ip");
-                    if (ipObj != null) {
-                        sensorIp = ipObj.toString();
-                    }
-                    if (DBDriver.insertData(value, topic, sensorIp) < 1) {
-                        System.err.println("Database error: could not insert data for topic " + topic);
-                    }
-                } else {
-                    System.err.println("Invalid value in topic " + topic + ": " + payloadStr);
-                }
-            } else {
-                System.out.println("Command received on topic " + topic + ": " + payloadStr);
-                // You could add actuator command handling here (if needed)
-            }
-
-        } catch (ParseException e) {
-            System.err.println("Failed to parse MQTT message: " + payloadStr);
-        } catch (SQLException e) {
-            System.err.println("Database error: " + e.getMessage());
+        if (sensorType != null) {
+            latestSensorValues.put(sensorType, payload); // store in-memory for control logic
+            db.insertSensorReading(sensorType, payload); // persist in database
+        } else {
+            System.out.println("[MQTTHandler] Received message on unknown topic: " + topic);
         }
     }
 
     @Override
     public void deliveryComplete(IMqttDeliveryToken token) {
-        // Not used — only for publishers
+        // Not used since this class doesn't publish messages
     }
 
-    public void disconnect() {
+    public String getLatestSensorValue(String sensorType) {
+        return latestSensorValues.get(sensorType);
+    }
+
+    public void printSensorStatus() {
+        System.out.println("[MQTTHandler] Latest sensor values:");
+        for (Map.Entry<String, String> entry : latestSensorValues.entrySet()) {
+            System.out.println("- " + entry.getKey() + ": " + entry.getValue());
+        }
+    }
+
+    public void close() {
         try {
-            if (mqttClient != null && mqttClient.isConnected()) {
-                mqttClient.disconnect();
-                mqttClient.close();
-                System.out.println("Disconnected from MQTT broker.");
+            if (client != null && client.isConnected()) {
+                client.disconnect();
+                client.close();
+                System.out.println("[MQTTHandler] Disconnected from MQTT broker");
             }
         } catch (MqttException e) {
-            System.err.println("Error during MQTT disconnect: " + e.getMessage());
+            System.err.println("[MQTTHandler] Error closing MQTT connection: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 }
