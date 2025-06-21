@@ -5,33 +5,40 @@ import org.unipi.smartwaste.db.DBDriver;
 
 import java.sql.SQLException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class PeriodicDataRetrieval implements Runnable {
 
-    // Thresholds for bins (adjust as needed)
+    // Thresholds per sensor key (only max for fill_level)
     private static final Map<String, Integer> thresholdsMin = new HashMap<>();
     private static final Map<String, Integer> thresholdsMax = new HashMap<>();
-    // To track actuator states per bin and sensor type
-    private static final Map<String, Map<String, Boolean>> checkOffs = new HashMap<>();
 
+    // Tracks whether actuator is currently ON for each sensor key
+    private static final Map<String, Boolean> actuatorState = new HashMap<>();
+
+    // Singleton instance
     private static final PeriodicDataRetrieval instance = new PeriodicDataRetrieval();
 
+    // Static initialization block for thresholds and actuator state
     static {
-        // Initialize thresholds, tweak values as needed
-        thresholdsMin.put("fill_level", 0);       // %
-        thresholdsMax.put("fill_level", 80);      // activate actuator if >80%
-        thresholdsMin.put("temperature", -10);    // °C
-        thresholdsMax.put("temperature", 50);     // °C
-        thresholdsMin.put("humidity", 0);          // %
-        thresholdsMax.put("humidity", 90);         // %
+        // fill_level only has a max threshold
+        thresholdsMax.put("fill_level", 80);
 
-        // checkOffs tracks per binId and sensor key if actuator is ON
+        thresholdsMin.put("temperature", -10);
+        thresholdsMax.put("temperature", 50);
+
+        thresholdsMin.put("humidity", 0);
+        thresholdsMax.put("humidity", 90);
+
+        actuatorState.put("fill_level", false);
+        actuatorState.put("temperature", false);
+        actuatorState.put("humidity", false);
     }
 
+    // Private constructor for singleton pattern
     private PeriodicDataRetrieval() {}
 
+    // Getter for singleton instance
     public static PeriodicDataRetrieval getInstance() {
         return instance;
     }
@@ -39,103 +46,106 @@ public class PeriodicDataRetrieval implements Runnable {
     @Override
     public void run() {
         try {
-            List<HashMap<String, Object>> bins = DBDriver.retrieveAllBinsStatus();
+            DeviceConfigManager.Device device = DeviceConfigManager.getDevice();
 
-            if (bins == null || bins.isEmpty()) {
-                System.out.println("No bins data retrieved.");
-                return;
-            }
+            // get latest sensor values from DB
+            Integer fillLevelValue = DBDriver.getLatestSensorValue("fill_level");
+            Integer tempValue = DBDriver.getLatestSensorValue("temperature");
+            Integer humidityValue = DBDriver.getLatestSensorValue("humidity");
 
-            for (HashMap<String, Object> bin : bins) {
-                String binId = (String) bin.get("id");
-                String ip = (String) bin.get("ip");
-
-                checkOffs.putIfAbsent(binId, new HashMap<>());
-
-                checkSensor(binId, ip, "fill_level", (Integer) bin.get("fill_level"));
-                checkSensor(binId, ip, "temperature", (Integer) bin.get("temperature"));
-                checkSensor(binId, ip, "humidity", (Integer) bin.get("humidity"));
-            }
+            // call check methods passing only value and resource string
+            checkFillLevel(fillLevelValue, device.coap_resources.full_bin);
+            checkSensor("temperature", tempValue, device.coap_resources.anomaly_fire);
+            checkSensor("humidity", humidityValue, device.coap_resources.anomaly_leakage);
 
         } catch (SQLException e) {
             System.err.println("Database error in PeriodicDataRetrieval: " + e.getMessage());
         }
     }
 
-    private void checkSensor(String binId, String ip, String key, Integer value) throws SQLException {
-        if (value == null) return;
+    private void checkFillLevel(Integer value, String resource) throws SQLException {
+        if (value == null) {
+            System.out.println("No data for fill_level");
+            return;
+        }
+        int max = thresholdsMax.get("fill_level");
+        boolean overThreshold = value > max;
+        boolean currentlyOn = actuatorState.get("fill_level");
 
-        Map<String, Boolean> binCheckMap = checkOffs.get(binId);
-
-        HashMap<String, Object> actuator = DBDriver.retrieveActuator(key);
-        if (actuator == null || actuator.isEmpty()) return;
-
-        boolean actuatorActive = (boolean) actuator.getOrDefault("active", false);
-
-        int minThreshold = thresholdsMin.getOrDefault(key, Integer.MIN_VALUE);
-        int maxThreshold = thresholdsMax.getOrDefault(key, Integer.MAX_VALUE);
-
-        if (value < minThreshold || value > maxThreshold) {
-            COAPClient.setSensors(key, true);
-
-            if (!actuatorActive) {
-                binCheckMap.put(key, true);
-                System.err.println("Danger detected on bin " + binId + " " + key + " sensor, activating actuator");
-                COAPClient.actuatorCall(ip, key, true, 1);
-            }
-        } else {
-            COAPClient.setSensors(key, false);
-
-            if (actuatorActive && Boolean.TRUE.equals(binCheckMap.get(key))) {
-                binCheckMap.put(key, false);
-                System.err.println("Turning off actuator for bin " + binId + " " + key + " sensor - no danger");
-                COAPClient.actuatorCall(ip, key, false, 0);
-            }
+        if (overThreshold && !currentlyOn) {
+            System.err.printf("fill_level = %d > %d, activating %s%n", value, max, resource);
+            COAPClient.actuatorCall(resource, true, 1);
+            actuatorState.put("fill_level", true);
+        } else if (!overThreshold && currentlyOn) {
+            System.out.printf("fill_level = %d <= %d, deactivating %s%n", value, max, resource);
+            COAPClient.actuatorCall(resource, false, 0);
+            actuatorState.put("fill_level", false);
         }
     }
 
-    // Setter methods for thresholds
-    public static boolean setMinThreshold(String key, Integer val) {
-        Integer max = thresholdsMax.get(key);
-        if (max != null && val >= max) {
-            System.out.println("Min threshold cannot be greater or equal than max threshold");
+    private void checkSensor(String key, Integer value, String resource) throws SQLException {
+        if (value == null) {
+            System.out.println("No data for " + key);
+            return;
+        }
+
+        int min = thresholdsMin.getOrDefault(key, Integer.MIN_VALUE);
+        int max = thresholdsMax.getOrDefault(key, Integer.MAX_VALUE);
+
+        boolean overThreshold = (value < min || value > max);
+        boolean currentlyOn = actuatorState.get(key);
+
+        if (overThreshold && !currentlyOn) {
+            System.err.printf("%s = %d outside [%d,%d], activating %s%n", key, value, min, max, resource);
+            COAPClient.actuatorCall(resource, true, 1);
+            actuatorState.put(key, true);
+        } else if (!overThreshold && currentlyOn) {
+            System.out.printf("%s = %d back in [%d,%d], deactivating %s%n", key, value, min, max, resource);
+            COAPClient.actuatorCall(resource, false, 0);
+            actuatorState.put(key, false);
+        }
+    }
+
+    // Public setter for max fill level threshold
+    public static boolean setMaxFillLevelThreshold(int val) {
+        int min = 0; // implicit floor
+        if (val <= min) {
+            System.out.println("Max threshold must be > 0");
             return false;
         }
-        thresholdsMin.put(key, val);
+        thresholdsMax.put("fill_level", val);
         return true;
     }
 
-    public static boolean setMaxThreshold(String key, Integer val) {
-        Integer min = thresholdsMin.get(key);
-        if (min != null && val <= min) {
-            System.out.println("Max threshold cannot be less or equal than min threshold");
+    // Other threshold setters
+    public static boolean setMinTemperatureThreshold(int val) {
+        return setThreshold("temperature", val, true);
+    }
+    public static boolean setMaxTemperatureThreshold(int val) {
+        return setThreshold("temperature", val, false);
+    }
+    public static boolean setMinHumidityThreshold(int val) {
+        return setThreshold("humidity", val, true);
+    }
+    public static boolean setMaxHumidityThreshold(int val) {
+        return setThreshold("humidity", val, false);
+    }
+
+    // Helper method to set min or max thresholds with validation
+    private static boolean setThreshold(String key, int value, boolean isMin) {
+        int other = isMin
+            ? thresholdsMax.getOrDefault(key, Integer.MAX_VALUE)
+            : thresholdsMin.getOrDefault(key, Integer.MIN_VALUE);
+
+        if ((isMin && value >= other) || (!isMin && value <= other)) {
+            System.out.println("Invalid threshold: " + (isMin ? "min" : "max") +
+                " must be " + (isMin ? "<" : ">") + other);
             return false;
         }
-        thresholdsMax.put(key, val);
+
+        if (isMin) thresholdsMin.put(key, value);
+        else thresholdsMax.put(key, value);
+
         return true;
-    }
-
-    public static boolean setMinTemperatureThreshold(Integer val) {
-        return setMinThreshold("temperature", val);
-    }
-
-    public static boolean setMaxTemperatureThreshold(Integer val) {
-        return setMaxThreshold("temperature", val);
-    }
-
-    public static boolean setMinHumidityThreshold(Integer val) {
-        return setMinThreshold("humidity", val);
-    }
-
-    public static boolean setMaxHumidityThreshold(Integer val) {
-        return setMaxThreshold("humidity", val);
-    }
-
-    public static boolean setMinFillLevelThreshold(Integer val) {
-        return setMinThreshold("fill_level", val);
-    }
-
-    public static boolean setMaxFillLevelThreshold(Integer val) {
-        return setMaxThreshold("fill_level", val);
     }
 }

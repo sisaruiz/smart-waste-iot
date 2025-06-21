@@ -1,7 +1,7 @@
 package org.unipi.smartwaste.db;
 
 import java.sql.*;
-import java.util.*;
+import java.util.HashMap;
 
 public class DBDriver {
 
@@ -9,30 +9,34 @@ public class DBDriver {
     private static final String username = "root";
     private static final String password = "ubuntu";
 
-    // Update or insert actuator status for a given IP and actuator type
-    public static int updateActuatorStatus(String ip, String actuatorType, Boolean status) throws SQLException {
+    public static int updateActuators(String address, String actuatorType, Boolean status) throws SQLException {
         try (Connection connection = DriverManager.getConnection(url, username, password);
              PreparedStatement ps = connection.prepareStatement(
-                 "INSERT INTO actuators (ip, type, active) VALUES (?, ?, ?) " +
-                 "ON DUPLICATE KEY UPDATE active = VALUES(active);"
-             )) {
-            if (ip.startsWith("/")) {
-                ip = ip.substring(1);
+                 "REPLACE INTO actuators (ip, type, active) VALUES (?, ?, ?);")) {
+
+            if (address.startsWith("/")) {
+                address = address.substring(1);
             }
-            ps.setString(1, ip);
+            ps.setString(1, address);
             ps.setString(2, actuatorType);
             ps.setBoolean(3, status);
-            return ps.executeUpdate();
+
+            ps.executeUpdate();
+            return ps.getUpdateCount();
         }
     }
 
-    // Retrieve actuator status by actuator type (returns first found)
+    /**
+     * Retrieve actuator info by actuator type.
+     * Returns empty HashMap if none found.
+     */
     public static HashMap<String, Object> retrieveActuator(String actuatorType) throws SQLException {
         HashMap<String, Object> result = new HashMap<>();
+
         try (Connection connection = DriverManager.getConnection(url, username, password);
              PreparedStatement ps = connection.prepareStatement(
-                 "SELECT ip, active FROM actuators WHERE type = ? LIMIT 1"
-             )) {
+                 "SELECT ip, active FROM actuators WHERE type = ? LIMIT 1")) {
+
             ps.setString(1, actuatorType);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
@@ -45,121 +49,100 @@ public class DBDriver {
     }
 
     /**
-     * Retrieve status of all bins, including sensor data and actuator statuses
-     * Returned List contains one Map per bin with keys:
-     * - id (String)
-     * - ip (String)
-     * - fill_level (Integer)
-     * - temperature (Integer)
-     * - humidity (Integer)
-     * - anomaly_active (Boolean)
+     * Insert sensor data with value and sensor type.
+     */
+    public static int insertData(Long value, String type) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(url, username, password);
+             PreparedStatement ps = connection.prepareStatement(
+                 "INSERT INTO data (value, sensor) VALUES (?, ?);")) {
+
+            ps.setInt(1, Math.toIntExact(value));
+            ps.setString(2, type);
+            ps.executeUpdate();
+            return ps.getUpdateCount();
+        }
+    }
+
+    /**
+     * Retrieve latest sensor values for all sensors.
+     * Returns map of sensor type to latest value.
+     */
+    public static HashMap<String, Integer> retrieveData() throws SQLException {
+        HashMap<String, Integer> result = new HashMap<>();
+
+        String sql = "SELECT sensor, value FROM data " +
+                     "WHERE (sensor, timestamp) IN " +
+                     "(SELECT sensor, MAX(timestamp) FROM data GROUP BY sensor)";
+
+        try (Connection connection = DriverManager.getConnection(url, username, password);
+             PreparedStatement ps = connection.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                result.put(rs.getString("sensor"), rs.getInt("value"));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Retrieve the single bin status including sensor values and actuator states.
+     * Keys returned:
+     * - fill_level (Integer or null)
+     * - temperature (Integer or null)
+     * - humidity (Integer or null)
+     * - anomaly_fire_active (Boolean)
+     * - anomaly_leakage_active (Boolean)
      * - full_active (Boolean)
      */
-    public static List<HashMap<String, Object>> retrieveAllBinsStatus() throws SQLException {
-        List<HashMap<String, Object>> binsList = new ArrayList<>();
+    public static HashMap<String, Object> getBinStatus() throws SQLException {
+        HashMap<String, Object> bin = new HashMap<>();
 
-        String sql = "SELECT b.id, b.ip, " +
-                     "  ds_fill.value AS fill_level, " +
-                     "  ds_temp.value AS temperature, " +
-                     "  ds_hum.value AS humidity, " +
-                     "  (SELECT a.active FROM actuators a WHERE a.ip = b.ip AND a.type = 'anomaly' LIMIT 1) AS anomaly_active, " +
-                     "  (SELECT a.active FROM actuators a WHERE a.ip = b.ip AND a.type = 'full' LIMIT 1) AS full_active " +
-                     "FROM bins b " +
-                     "LEFT JOIN data ds_fill ON ds_fill.sensor = 'fill_level' AND ds_fill.sensor_ip = b.ip AND ds_fill.timestamp = (" +
-                     "    SELECT MAX(timestamp) FROM data WHERE sensor = 'fill_level' AND sensor_ip = b.ip" +
-                     ") " +
-                     "LEFT JOIN data ds_temp ON ds_temp.sensor = 'temperature' AND ds_temp.sensor_ip = b.ip AND ds_temp.timestamp = (" +
-                     "    SELECT MAX(timestamp) FROM data WHERE sensor = 'temperature' AND sensor_ip = b.ip" +
-                     ") " +
-                     "LEFT JOIN data ds_hum ON ds_hum.sensor = 'humidity' AND ds_hum.sensor_ip = b.ip AND ds_hum.timestamp = (" +
-                     "    SELECT MAX(timestamp) FROM data WHERE sensor = 'humidity' AND sensor_ip = b.ip" +
-                     ")";
+        String sql = "SELECT " +
+                "  (SELECT value FROM data WHERE sensor = 'fill_level' ORDER BY timestamp DESC LIMIT 1) AS fill_level, " +
+                "  (SELECT value FROM data WHERE sensor = 'temperature' ORDER BY timestamp DESC LIMIT 1) AS temperature, " +
+                "  (SELECT value FROM data WHERE sensor = 'humidity' ORDER BY timestamp DESC LIMIT 1) AS humidity, " +
+                "  (SELECT active FROM actuators WHERE type = 'anomaly_fire' LIMIT 1) AS anomaly_fire_active, " +
+                "  (SELECT active FROM actuators WHERE type = 'anomaly_leakage' LIMIT 1) AS anomaly_leakage_active, " +
+                "  (SELECT active FROM actuators WHERE type = 'full' LIMIT 1) AS full_active";
 
         try (Connection connection = DriverManager.getConnection(url, username, password);
              PreparedStatement ps = connection.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
 
-            while (rs.next()) {
-                HashMap<String, Object> bin = new HashMap<>();
+            if (rs.next()) {
+                bin.put("fill_level", rs.getObject("fill_level") != null ? rs.getInt("fill_level") : null);
+                bin.put("temperature", rs.getObject("temperature") != null ? rs.getInt("temperature") : null);
+                bin.put("humidity", rs.getObject("humidity") != null ? rs.getInt("humidity") : null);
 
-                bin.put("id", rs.getString("id"));
-                bin.put("ip", rs.getString("ip"));
-
-                // The sensor values may be null if no data present
-                Integer fillLevel = rs.getObject("fill_level") != null ? rs.getInt("fill_level") : null;
-                Integer temperature = rs.getObject("temperature") != null ? rs.getInt("temperature") : null;
-                Integer humidity = rs.getObject("humidity") != null ? rs.getInt("humidity") : null;
-
-                bin.put("fill_level", fillLevel);
-                bin.put("temperature", temperature);
-                bin.put("humidity", humidity);
-
-                Boolean anomalyActive = rs.getObject("anomaly_active") != null ? rs.getBoolean("anomaly_active") : false;
-                Boolean fullActive = rs.getObject("full_active") != null ? rs.getBoolean("full_active") : false;
-
-                bin.put("anomaly_active", anomalyActive);
-                bin.put("full_active", fullActive);
-
-                binsList.add(bin);
+                bin.put("anomaly_fire_active", rs.getObject("anomaly_fire_active") != null && rs.getBoolean("anomaly_fire_active"));
+                bin.put("anomaly_leakage_active", rs.getObject("anomaly_leakage_active") != null && rs.getBoolean("anomaly_leakage_active"));
+                bin.put("full_active", rs.getObject("full_active") != null && rs.getBoolean("full_active"));
             }
         }
-
-        return binsList;
+        return bin;
     }
 
-    // Insert sensor data (value + sensor type + sensor IP)
-    public static int insertSensorData(Long value, String sensorType, String sensorIp) throws SQLException {
-        try (Connection connection = DriverManager.getConnection(url, username, password);
-             PreparedStatement ps = connection.prepareStatement(
-                 "INSERT INTO data (value, sensor, sensor_ip) VALUES (?, ?, ?);"
-             )) {
-            ps.setInt(1, Math.toIntExact(value));
-            ps.setString(2, sensorType);
-            if (sensorIp.startsWith("/")) {
-                sensorIp = sensorIp.substring(1);
-            }
-            ps.setString(3, sensorIp);
-            return ps.executeUpdate();
-        }
-    }
-
-    // Alias method for insertSensorData (used by MQTTHandler)
-    public static int insertData(Long value, String sensorType, String sensorIp) throws SQLException {
-        return insertSensorData(value, sensorType, sensorIp);
-    }
-
-    // Insert button press event with current timestamp
-    public static int insertButtonPress() throws SQLException {
-        try (Connection connection = DriverManager.getConnection(url, username, password);
-             PreparedStatement ps = connection.prepareStatement(
-                 "INSERT INTO button_events (event_time) VALUES (CURRENT_TIMESTAMP);"
-             )) {
-            return ps.executeUpdate();
-        }
-    }
-
-    // Retrieve latest sensor data per sensor type
-    public static HashMap<String, Integer> retrieveData() throws SQLException {
-        HashMap<String, Integer> latestValues = new HashMap<>();
-        String sql = "SELECT d.sensor, d.value FROM data d " +
-                     "WHERE d.timestamp = (" +
-                     "  SELECT MAX(timestamp) FROM data WHERE sensor = d.sensor" +
-                     ")";
-        try (Connection connection = DriverManager.getConnection(url, username, password);
-             PreparedStatement ps = connection.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                latestValues.put(rs.getString("sensor"), rs.getInt("value"));
-            }
-        }
-        return latestValues;
-    }
-
-    // Clear actuators table (useful for testing or reset)
     public static void resetActuators() throws SQLException {
         try (Connection connection = DriverManager.getConnection(url, username, password);
              PreparedStatement ps = connection.prepareStatement("DELETE FROM actuators")) {
             ps.executeUpdate();
         }
     }
+
+    public static Integer getLatestSensorValue(String sensor) throws SQLException {
+        String sql = "SELECT value FROM data WHERE sensor = ? ORDER BY timestamp DESC LIMIT 1";
+        try (Connection connection = DriverManager.getConnection(url, username, password);
+            PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, sensor);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("value");
+                } else {
+                    return null;
+                }
+            }
+        }
+    }
+
 }

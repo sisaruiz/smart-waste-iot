@@ -1,0 +1,18 @@
+{
+  "ipv6": "fe80::abcd:0001",
+  "coap_resources": {
+    "temperature": "coap://[fe80::abcd:0001]/temperature",
+    "humidity": "coap://[fe80::abcd:0001]/humidity",
+    "distance": "coap://[fe80::abcd:0001]/distance",
+    "button": "coap://[fe80::abcd:0001]/button",
+    "full_bin": "coap://[fe80::abcd:0001]/full_bin",
+    "anomaly_fire": "coap://[fe80::abcd:0001]/anomaly_fire",
+    "anomaly_leakage": "coap://[fe80::abcd:0001]/anomaly_leakage"
+  },
+  "mqtt_topics": {
+    "temperature": "smartwaste/bin_1/temperature",
+    "humidity": "smartwaste/bin_1/humidity",
+    "distance": "smartwaste/bin_1/distance",
+    "button": "smartwaste/bin_1/button"
+  }
+}

@@ -6,15 +6,12 @@ import java.util.HashMap;
 public class testDB {
     public static void main(String[] args) {
         try {
-            // Test updating actuator status
-            int rowsUpdated = DBDriver.updateActuatorStatus("/192.168.0.1", "temperature", true);
+            int rowsUpdated = DBDriver.updateActuators("/192.168.0.1", "temperature", true);
             System.out.println("Rows updated (actuator): " + rowsUpdated);
 
-            // Test retrieving actuator status
             HashMap<String, Object> actuatorStatus = DBDriver.retrieveActuator("temperature");
             System.out.println("Actuator status: " + actuatorStatus);
 
-            // Clear actuators table
             DBDriver.resetActuators();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -22,21 +19,21 @@ public class testDB {
         }
 
         try {
-            // Insert sample sensor data (provide sensor IP now)
-            System.out.println("Insert temperature 20 from 192.168.0.100: " +
-                DBDriver.insertSensorData(20L, "temperature", "192.168.0.100"));
-            System.out.println("Insert humidity 40 from 192.168.0.101: " +
-                DBDriver.insertSensorData(40L, "humidity", "192.168.0.101"));
-            System.out.println("Insert temperature 22 from 192.168.0.100: " +
-                DBDriver.insertSensorData(22L, "temperature", "192.168.0.100"));
-            System.out.println("Insert distance 75 from 192.168.0.102: " +
-                DBDriver.insertSensorData(75L, "distance", "192.168.0.102"));
+            System.out.println("Insert temperature 20: " +
+                DBDriver.insertData(20L, "temperature"));
+            System.out.println("Insert humidity 40: " +
+                DBDriver.insertData(40L, "humidity"));
+            System.out.println("Insert temperature 22: " +
+                DBDriver.insertData(22L, "temperature"));
+            System.out.println("Insert distance 75: " +
+                DBDriver.insertData(75L, "distance"));
 
-            // Retrieve latest sensor values
             HashMap<String, Integer> latestValues = DBDriver.retrieveData();
             System.out.println("Latest sensor values: " + latestValues);
 
-            // Clear actuators table again
+            Integer latestTemp = DBDriver.getLatestSensorValue("temperature");
+            System.out.println("Latest temperature value: " + latestTemp);
+
             DBDriver.resetActuators();
         } catch (SQLException e) {
             e.printStackTrace();

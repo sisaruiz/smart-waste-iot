@@ -24,13 +24,61 @@ static bool registered = false;
 
 volatile int anomaly_type = ANOMALY_NONE;
 
+// Manual override from CLI
+static bool manual_override = false;
+static bool manual_state = false;
+
+// Extern sensor resources (registered here)
 extern coap_resource_t temperature_resource;
 extern coap_resource_t humidity_resource;
 
+// ==== CoAP PUT Handler for /anomaly ====
+static void res_put_handler(coap_message_t *request, coap_message_t *response,
+                            uint8_t *buffer, uint16_t preferred_size, int32_t *offset) {
+
+  size_t len = 0;
+  const uint8_t *payload = NULL;
+  payload = coap_get_payload(request, &len);
+
+  if(payload == NULL || len == 0) {
+    coap_set_status_code(response, BAD_REQUEST_4_00);
+    return;
+  }
+
+  // Copy payload to a safe buffer and null-terminate
+  if(len > 64) len = 64;
+  char payload_str[65];
+  memcpy(payload_str, payload, len);
+  payload_str[len] = '\0';
+
+  if(strstr(payload_str, "\"action\":true") != NULL) {
+    manual_override = true;
+    manual_state = true;
+    LOG_INFO("Received CLI request: activate anomaly\n");
+  } else if(strstr(payload_str, "\"action\":false") != NULL) {
+    manual_override = true;
+    manual_state = false;
+    LOG_INFO("Received CLI request: deactivate anomaly\n");
+  } else {
+    coap_set_status_code(response, BAD_REQUEST_4_00);
+    return;
+  }
+
+  coap_set_status_code(response, CHANGED_2_04);
+}
+
+RESOURCE(res_anomaly,
+         "title=\"Anomaly actuator\";rt=\"actuator\";methods=\"PUT\"",
+         NULL,
+         res_put_handler,
+         NULL,
+         NULL);
+
+// ========== CoAP Registration Handler ==========
 void client_chunk_handler(coap_message_t *response) {
   const uint8_t *chunk;
   if(response == NULL) {
-    LOG_ERR("Request timed out");
+    LOG_ERR("Request timed out\n");
     return;
   }
   LOG_INFO("Registration successful\n");
@@ -39,6 +87,7 @@ void client_chunk_handler(coap_message_t *response) {
   registered = true;
 }
 
+// ========== Main Process ==========
 PROCESS(anomaly_actuator_process, "Anomaly Actuator Process");
 AUTOSTART_PROCESSES(&anomaly_actuator_process);
 
@@ -47,6 +96,7 @@ PROCESS_THREAD(anomaly_actuator_process, ev, data) {
 
   leds_off(LEDS_RED | LEDS_YELLOW);
 
+  // Register with server
   while(!registered) {
     coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &server_ep);
     coap_init_message(request, COAP_TYPE_CON, COAP_POST, 0);
@@ -58,20 +108,36 @@ PROCESS_THREAD(anomaly_actuator_process, ev, data) {
 
   LOG_INFO("Anomaly actuator started\n");
 
+  // Activate sensors and actuator resource
   coap_activate_resource(&temperature_resource, "temperature");
   coap_activate_resource(&humidity_resource, "humidity");
+  coap_activate_resource(&res_anomaly, "anomaly");
 
   while(1) {
-    PROCESS_PAUSE();  // could also use timers if polling
+    PROCESS_PAUSE(); // Idle loop
 
-    if(anomaly_type == ANOMALY_FIRE) {
-      leds_on(LEDS_RED);
-      leds_off(LEDS_YELLOW);
-    } else if(anomaly_type == ANOMALY_LEAKAGE) {
-      leds_on(LEDS_YELLOW);
-      leds_off(LEDS_RED);
+    bool fire = (anomaly_type == ANOMALY_FIRE);
+    bool leak = (anomaly_type == ANOMALY_LEAKAGE);
+
+    if(manual_override) {
+      if(manual_state) {
+        // Manual ON (display warning)
+        leds_on(LEDS_RED | LEDS_YELLOW);
+      } else {
+        // Manual OFF (force all LEDs off)
+        leds_off(LEDS_RED | LEDS_YELLOW);
+      }
     } else {
-      leds_off(LEDS_RED | LEDS_YELLOW);
+      // Follow automatic anomaly state
+      if(fire) {
+        leds_on(LEDS_RED);
+        leds_off(LEDS_YELLOW);
+      } else if(leak) {
+        leds_on(LEDS_YELLOW);
+        leds_off(LEDS_RED);
+      } else {
+        leds_off(LEDS_RED | LEDS_YELLOW);
+      }
     }
   }
 
